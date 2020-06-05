@@ -1,0 +1,60 @@
+
+library(data.table)
+library(Matrix)
+library("data.table")
+library("magrittr")
+library("matrixStats")
+library(data.table)
+library(Matrix)
+
+
+DM2020_training_docs_and_labels<-fread("//CENTSRV4/Biura$/wymiana/!AiED/JM/uczenie/datamining/projekt2/DM2020_training_docs_and_labels.txt" ,header = FALSE)
+
+DM2020_training_docs_and_labels[1:10,]
+
+
+zbior_probny_100_wiersz <- DM2020_training_docs_and_labels[1:100,] # zeby nie zamulac kompa duza iloscia danych, bede operawal tylko na 100 pierwszych artykulach
+rm(DM2020_training_docs_and_labels) # czyszczenia 
+
+
+zbior_probny_obrobka <- zbior_probny_100_wiersz
+zbior_probny_obrobka[,bez_interpunkcji:=lapply(zbior_probny_obrobka$V2, function(x) gsub("[[:punct:][:digit:][:space:]]+", " ", x)) ]
+head(zbior_probny_obrobka)
+
+zbior_probny_obrobka[,lista_slow:=lapply(zbior_probny_obrobka$bez_interpunkcji, function(x) unlist(strsplit(x, "[[:space:]]"))) ]
+zbior_probny_obrobka[1,]$lista_slow
+
+zbior_probny_obrobka[,V4:=lapply(zbior_probny_obrobka$lista_slow, function(x) gsub("[[:space:]]+", "", x))]
+zbior_probny_obrobka[1,]$V4
+
+zbior_probny_obrobka[,lista_slow_male_litery:=lapply(zbior_probny_obrobka$V4, tolower)]
+zbior_probny_obrobka[1,]$lista_slow_male_litery
+
+zbior_probny_obrobka[,lista_slow_bez_stopwords:=lapply(zbior_probny_obrobka$lista_slow_male_litery, function(x) {idx = which(nchar(x) < 3 | nchar(x) > 20 | is.na(nchar(x))); 
+if(length(idx) > 0) x <- x[-idx];
+x})]
+zbior_probny_obrobka[1,]$lista_slow_bez_stopwords
+
+zbior_probny_obrobka[,V5:=lapply(lista_slow_bez_stopwords, function(x, dict) {idx = which(x %in% dict); 
+if(length(idx) > 0) x[-idx]}, 
+stopwords())]
+zbior_probny_obrobka[1,]$V5
+
+zbior_probny_obrobka[,V6:=lapply(V5, stemDocument)] # zostawia tylko kor s3owa , trzon , czeoa g3ówn1 
+zbior_probny_obrobka[1,]$V6
+
+
+# "bags-of-words": we simply count occurrences of each term n the text
+bagOfWords = table(zbior_probny_obrobka$V6[[1]])
+head(bagOfWords, 10)
+
+bagOfWords[order(bagOfWords,decreasing = TRUE)][1:10] # wyrzuca 10 najpopularniejszych s3ów z ich liczboociami 
+
+
+# we may want to normalize the frequencies with regard to text lengths
+bagOfWords = bagOfWords/sum(bagOfWords)
+head(bagOfWords, 10)
+
+
+
+zbior_probny_obrobka[,V7:=lapply(V6, table(zbior_probny_obrobka$V6))] # tutaj sie nie odpala, gdyz dlugosci w V6 nie są takie same
