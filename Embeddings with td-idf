@@ -1,0 +1,73 @@
+options(width = 120)
+library(tm)
+library(data.table)
+library(wordVectors)
+library(glmnet)
+library(foreach)
+library(doParallel)
+
+### Najpierw wczytuję dane i robię czyszczenie.
+# W labie 10 brakowało usuwania interpunkcji!
+# Przez to "students" oraz "students'" to były dwa różne słowa
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+# we need to do some basic text cleaning but typically, we do not stem words and remove stop-words
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+docs[, text := gsub("[[:punct:][:digit:][:space:]]+", " ", text)]
+docs[, text := tolower(text)]
+
+#Teraz trzeba jeszcze raz wytrenować skipgram
+# this method is using a streaming API so we can write the documents to disc and save memory
+writeLines(docs[, text], "docs_for_training.txt")
+
+word_vectors_skipgram = train_word2vec("docs_for_training.txt",
+                                       "words_skipgram_size50.bin",
+                                       vectors=100, threads=6, window=10, iter=10, 
+                                       negative_samples=5, cbow = 0, force = TRUE)
+save(word_vectors_skipgram,file="word_vectors_skipgram.RData")
+
+### Teraz zamieniam docs na corpus, żeby użyć funkcji z pakietu tm do policzenia tf-idf
+# Próbowałem wcześniej liczyć to ręcznie, ale się liczyło kilka godzin i się nie doliczyło
+# a w pakiecie tm się natychmiast
+myCorpus = Corpus(DataframeSource(docs),
+                   readerControl = list(reader = readDataframe, language = "en"))
+
+DTM = DocumentTermMatrix(myCorpus, 
+                          control = list(weighting = weightTfIdf))
+# Jest tylko jeden problem - DTM zawiera mniej słów niż nasz word_vectors_skipgram.
+# Trzeba znaleźć te dodatkowe słowa i usunąć z docs
+load("word_vectors_skipgram.RData")
+
+
+wordsDTM = colnames(DTM) #To są wszystkie słowa występujące w DTM
+wordsSkipgram = rownames(word_vectors_skipgram) #To są wszystkie słowa występujące w word_vectors_skipgram
+
+length(wordsDTM)
+length(wordsSkipgram)
+
+#Słowa które są w Skipgram, a nie ma ich w DTM
+missing_words = lapply(wordsSkipgram,function(x, words) if(!(x%in%words)){return(x)},wordsDTM)
+missing_words = missing_words[-which(sapply(missing_words, is.null))]
+
+#Słowa które są w DTM, a nie ma ich w Skipgram
+missing_words2 = lapply(wordsDTM,function(x, words) if(!(x%in%words)){return(x)},wordsSkipgram)
+missing_words2 = missing_words2[-which(sapply(missing_words2, is.null))]
+
+
+###Dalsza idea była taka, żeby wziąć każdy dokument zakodować w sposób:
+#  - każde słowo zakodować odpowiadającym mu wektorem z word_vectors_skipgram
+#  - każdy z tych wektorów pomnożyć przez tf-idf tego słowa w tym dokumencie.
+#  - zsumować
+# Wyglądałoby to mniej więcej tak, ale nie wiem, czy działa, bo nie dotarłem do tego momentu
+# Wcześniej, ponieważ skipgram i DTM miały inne zbiory słów, to wywalała się linijka inspect(DTM[i,row.names(wordVec)])
+doc_embeddings = matrix( rep( 0, len=100*100000), nrow = 100000)
+for(i in 1:nrows(DTM)){
+  row = strsplit(docs[i, text], " ")[[1]]
+  wordVec = word_vectors_skipgram[[row, average=F]] #wordVec to macierz 100 na (liczba słów w dokumencie)
+  wordVec = wordVec * inspect(DTM[i,row.names(wordVec)])
+  doc_embeddings[i,] = apply(wordVec, 2, sum)
+}
