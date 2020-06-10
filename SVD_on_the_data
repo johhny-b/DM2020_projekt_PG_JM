@@ -1,0 +1,64 @@
+options(width = 120)
+library(openNLP)
+library(SnowballC)
+library(NLP)
+library(tm)
+library(Matrix)
+library(textmineR)
+library(uwot)
+library(RSpectra)
+library(e1071)
+library(caTools)
+library(ggplot2)
+
+
+
+#Najpierw przepisuję te dane, żeby były w takim formacie jak ten te przykładowe
+#dane do labu9, czyli każdy dokument w innym pliku tekstowym
+#Poniższa funkcja zapisuje każdy abstract do innego pliku w katalogu o ścieżce pathToWrite
+rewriteDocs(pathToRead, pathToWrite){
+  for(i in 1:nrow(data)){
+    data = fread(pathToRead ,header = FALSE)
+    fwrite(data[i,2], file=paste(pathToWrite, as.character(i), ".txt", sep=""), row.names=FALSE, 
+           col.names=FALSE, sep="\t")
+    rm(data)
+  }
+}
+
+rewriteDocs("DM2020_training_docs_and_labels.txt", "docs/")
+
+#Poniżej rzeczy przepisane z lab9:
+docsDir = "docs"
+myCorpus = VCorpus(DirSource(file.path(getwd(), docsDir), encoding = "UTF-8"), 
+                   readerControl = list(reader = readPlain, language = "en"))
+
+#Czyszczenie danych:
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+#Zamiana na DocumentTermMatrix, z wagami Term Frequency - Inverted Document Frequency
+DTM = DocumentTermMatrix(myCorpus, 
+                         control = list(bounds = list(global = c(2, length(myCorpus))),
+                                        weighting = weightTfIdf))
+dim(DTM) #Jest 55342 słów
+
+#Rozkład SVD. Metoda 1 (wolniejsza):
+SVD = svd(DTM)
+
+#Rozkład SVD. Metoda 2 (szybsza). Najpierw trzeba zrobić konwersje data.frame DTM, 
+#bo tak wymaga tego pakiet RSpectra:
+DTM2 = Matrix::Matrix(as.matrix(DTM), sparse = TRUE)
+SVD_alt = RSpectra::svds(DTM2, k = 100, nu = 100, nv = 100)
+
+#Mnie żadna z tych metod nie działa, za mało RAMu
