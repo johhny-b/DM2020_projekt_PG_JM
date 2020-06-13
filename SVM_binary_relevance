@@ -1,0 +1,72 @@
+options(width = 120)
+#library(openNLP)
+#library(SnowballC)
+#library(NLP)
+#library(Matrix)
+#library(textmineR)
+#library(uwot)
+#library(RSpectra)
+#library(caTools)
+#library(ggplot2)
+
+library(data.table)
+library(tm)
+library(e1071)
+
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus = VCorpus(DataframeSource(docs),
+                  readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+DTM = DocumentTermMatrix(myCorpus, 
+                         control = list(bounds = list(global = c(2, length(myCorpus))),
+                                        weighting = weightTfIdf))
+#Czyszczenie danych:
+dim(DTM) #Jest 37184 słów
+
+labels = strsplit(docs[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+labels = as.matrix(labels)
+val_idx = sort(sample(nrow(DTM), 10000))
+
+for(i in 1:ncol(labels)){
+  print(i)
+  if(i==1){
+    models = list(e1071::svm(DTM[-val_idx,], labels[-val_idx,i], 
+                          type = 'C-classification', 
+                          kernel = 'linear', cost = 1,
+                          probability = TRUE))
+  }
+  else{
+    x = DTM[val_idx,]
+    y = labels[val_idx,i]
+    models = c(models, list(e1071::svm(DTM[-val_idx,], labels[-val_idx,i],
+                              type = 'C-classification', 
+                              kernel = 'linear', cost = 1,
+                              probability = TRUE)))
+  }
+}
