@@ -1,0 +1,39 @@
+library(data.table)
+library(tm)
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus = VCorpus(DataframeSource(docs),
+                   readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+DTM = DocumentTermMatrix(myCorpus, 
+                         control = list(bounds = list(global = c(1000, 0.15*length(myCorpus))),
+                                        weighting = weightTfIdf)) 
+
+#Teraz można dokonywać predykcji. Najpierw trzeba przygotować labele:
+labels = strsplit(docs[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+labels = as.matrix(labels)
