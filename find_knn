@@ -1,0 +1,5 @@
+val_idx = sort(sample(nrow(DTM), 10000))
+
+library(knn.covertree)
+DTM2Dense = as.matrix(DTM)
+knn = find_knn(data = DTMDense, k = 10, query = DTMDense[val_idx,], distance = c("cosine"))
