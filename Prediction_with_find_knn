@@ -19,5 +19,13 @@ F1score = function(x, y) {
   
   as.numeric(result)
 }
+
+#W tym momencie jest ważne, jakie doumenty były w zbiorze walidacyjnym, bo tylko dla nich
+#mamy predykcje od find_knn
+#Zamiast używać tych indeksów które mi wysłałeś, wyciągam je z tego co jest zapisane w knn
+
+rowNames = row.names(knnIndex)
+val_idx = sapply(docs[,doc_id], function(x, rowNames) {x%in%rowNames}, rowNames)
+val_idx = which(val_idx == TRUE)
 true_labels = strsplit(docs[, labels], ",")[val_idx]
 mean(mapply(F1score, predicted_labels, true_labels))
