@@ -22,13 +22,14 @@ myCorpus_test = tm_map(myCorpus_test, removeWords, stopwords())
 myCorpus_test = tm_map(myCorpus_test, stemDocument)
 myCorpus_test = tm_map(myCorpus_test, stripWhitespace)
 
+#To stworzenia DTM_test potrzebujemy sÅ‚Ã³w z DTM (wygenerowanego na zbiorze treningowym)
 DTM_test = DocumentTermMatrix(myCorpus_test, 
-                         control = list(bounds = list(global = c(1000, 0.15*length(myCorpus_test))),
+                         control = list(dictionary = DTM$dimnames$Terms,
                                         weighting = weightTfIdf)) 
 
 
-############# LABELE NIE S¥ NAM DO NICZEGO POTRZEBNE!!!!!!!!!!!
-#Teraz mo¿na dokonywaæ predykcji. Najpierw trzeba przygotowaæ labele:
+############# LABELE NIE SÂ¥ NAM DO NICZEGO POTRZEBNE!!!!!!!!!!!
+#Teraz moÂ¿na dokonywaÃ¦ predykcji. Najpierw trzeba przygotowaÃ¦ labele:
 #labels = strsplit(docs_test[, labels], ",")
 #labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
 #                    label = unlist(labels))
