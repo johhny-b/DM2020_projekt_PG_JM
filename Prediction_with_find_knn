@@ -1,0 +1,23 @@
+load("val_idx.RData")
+load("output_of_knn.RData")
+
+knnIndex = knn$index
+
+preds = apply(knnIndex, 1, function(x, labels) {pred = labels[x];
+              pred = apply(pred, 2, sum)}, labels)
+preds = t(preds)
+predicted_labels = apply(preds, 1, function(x) names(which(x >= 1)))
+
+F1score = function(x, y) {
+  common = intersect(x, y)
+  result = 0
+  if(length(common) == 0) {
+    result = 0
+  } else {
+    result = 2*(length(common)^2)/(length(x)*length(y))/(length(common)/length(x) + length(common)/length(y))
+  }
+  
+  as.numeric(result)
+}
+true_labels = strsplit(docs[, labels], ",")[val_idx]
+mean(mapply(F1score, predicted_labels, true_labels))
