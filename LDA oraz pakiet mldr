@@ -1,0 +1,29 @@
+set.seed(1) #set.seed() jest po to, żeby zawsze był ten sam zbiór walidacyjny (łatwiej porównywać)
+val_idx = sort(sample(nrow(DTM), 10000))
+
+library(Matrix)
+DTMSparse = Matrix::Matrix(as.matrix(DTM), sparse = TRUE)
+
+library(textmineR)
+# Poniżej rzutujemy DTM na przestrzeń wymiaru 20. Można się bawić tym parametrem, jeśli wyniki będą niesatysfakcjonujące
+LDA_model = textmineR::FitLdaModel(DTMSparse[-val_idx, ], k = 20, 
+                                   iterations = 500, burnin = 450)
+GetTopTerms(LDA_model$phi, 6)[, 1:10]
+#Z GetTopTerms wynika, że niektóre słowa pojawiają się w różnych składowych. W labie od pana Janusza też tak jest, ale ogólnie
+#to w jaki sposób te słowa są grupowane, nie jest dla mnie szczególnie przekonujące. Można się zapytać pana Janusza, o czy to świadczy
+#(może za małe albo za duże k)
+
+train_topics_gibbs =  predict(LDA_model, DTMSparse[-val_idx, ], method = "gibbs",
+                              iterations = 500, burnin = 450)
+test_topics_gibbs = predict(LDA_model, DTMSparse[val_idx, ], method = "gibbs",
+                            iterations = 500, burnin = 450)
+
+library(mldr)
+#Tu tworzę obiket mldr, na którym można trenować modele z pakietu mlrd (albo utiml, który działa na mlrd, tylko ma przyjaźniejszy interfejs) 
+train_topics_mldr = as.data.frame(cbind(train_topics_gibbs, labels[-val_idx,]))
+train_topics_mldr = mldr_from_dataframe(train_topics_mldr, labelIndices = 21:256)
+
+library(utiml)
+mlKNN = mlknn(train_topics_mldr) #To wymaga 30 GB
+
+brmodel = br(train_topics_mldr, "RF", seed=1) #Las losowy, uchodzi za dobry klasyfikator. Można jeszcze spróbować svm
