@@ -1,0 +1,14 @@
+Po zaczytaniu danych dokonaliœmy standardowego czyszczenia danych ( usuwanie interpunkcji , zmniejszanie liter usuwanie 
+s³ów stopwords etc). 
+
+nastêpnie przygotowaliœmy na podstawie oczyszczonych danych DTM ( document term matrix) , macierz s³ów 
+z warunkami ¿e mog¹ w tym naszym s³owniku znaleŸæ siê tylko te s³owa które wyst¹pi³y w conajmniej 250 artyku³ach ale nie wyst¹pi³yu
+w wiêcej ni¿ 22 tyœ artyku³ów ( musieliœmy znaleŸæ z³oty œrodek miêdzy wa¿nymi s³owami w s³owniku 
+a wielkoœci¹ tego s³ownika) 
+
+Nastêpnie przekonwertowaliœmy  zbiór artyku³ów na macierz  , ka¿demu artyku³owi przypisaliœmy które ze s³ów ze s³ownika 
+znalaz³y siê w tym artykule. 
+Na takiej macierzy zapuœciliœmy KNN ( funkcja find_knn z pakietu knn.covertree).
+Dla k=2 oraz k=3.
+Dla k=2 przewidywanymi labelami by³a suma labeli z jego dwóch najbli¿szych s¹siadów. 
+Dla k=3 jeszcze nie wiem :) 
