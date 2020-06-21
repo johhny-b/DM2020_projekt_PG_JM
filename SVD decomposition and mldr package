@@ -1,0 +1,112 @@
+library(data.table)
+library(tm)
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+docsTest = data.table::fread('DM2020_test_docs.txt', header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+
+labels = strsplit(docs[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+labels = as.matrix(labels)
+
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus = VCorpus(DataframeSource(docs),
+                   readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+DTM = DocumentTermMatrix(myCorpus, 
+                               control = list(bounds = list(global = c(2, length(myCorpus))),
+                                              weighting = weightTfIdf)) 
+dim(DTM) #Jest 11733 słów
+
+library(Matrix)
+DTMSparse = Matrix::Matrix(as.matrix(DTM[1:10000,]), sparse = TRUE)
+for(i in 1:9){
+  tmp = Matrix(as.matrix(DTM[(1+i*10000):((i+1)*10000),]), sparse=TRUE)
+  DTMSparse = rbind(DTMSparse, tmp)
+}
+
+library(RSpectra)
+system.time({
+  SVD = RSpectra::svds(DTMSparse, k = 100, nu = 100, nv = 100)
+})
+plot(head(SVD$d, 50), ylab = 'eigenvalues')
+
+concept1 = SVD$v[,1]
+summary(concept1)
+concept1 = -concept1
+names(concept1) = Terms(DTM)
+
+concept1 = sort(concept1, decreasing = TRUE)
+concept1[1:10]
+
+concept2 = SVD$v[,2]
+concept2 = -concept2
+names(concept2) = Terms(DTM)
+
+concept2 = sort(concept2, decreasing = TRUE)
+concept2[1:10]
+
+DTM_transformed = DTMSparse %*% SVD$v
+dim(DTM_transformed)
+
+DTM_transformed = DTM_transformed[,1:20]
+
+library(mldr)
+
+mldrData = as.data.frame(cbind(as.matrix(DTM_transformed), labels))
+mldrData = mldr_from_dataframe(mldrData, labelIndices = 21:256)
+
+library(utiml)
+ds = create_holdout_partition(mldrData, c(train=0.1, test=0.9), "random")
+
+brSVM = br(ds$train, "SVM",  type = 'C-classification', kernel = 'linear', 
+           cost = 1)
+predictionSVM = predict(brSVM, ds$test)
+head(rowSums(predictionSVM))
+
+newpred = rcut_threshold(predictionSVM, 8)
+head(rowSums(newpred))
+
+resultSVM = multilabel_evaluate(ds$test, predictionSVM, "bipartition")
+round(resultSVM)
+
+result <- multilabel_evaluate(ds$tes, predictionSVM, "bipartition")
+thresres <- multilabel_evaluate(ds$tes, newpred, "bipartition")
+
+round(cbind(Default=result, RCUT=thresres), 3)
+round(result, 3)
+
+### Właściwy trening
+system.time({
+  brSVM = br(mldrData, "SVM",  type = 'C-classification', kernel = 'linear', 
+           cost = 1)
+})
+save(brSVM, file="brSVM.RData")
+rm(brSVM)
+
+system.time({
+  brRF = br(mldrData, "RF")
+})
+save(brRF, file = "brRF.RData")
