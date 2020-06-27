@@ -1,0 +1,268 @@
+#library(openNLP)
+#library(SnowballC)
+#library(NLP)
+#library(Matrix)
+#library(textmineR)
+#library(uwot)
+#library(RSpectra)
+#library(caTools)
+#library(ggplot2)
+
+library(data.table)
+library(tm)
+library(e1071)
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus = VCorpus(DataframeSource(docs),
+                   readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+DTM = DocumentTermMatrix(myCorpus, 
+                         control = list(bounds = list(global = c(2, length(myCorpus))),
+                                        weighting = weightTfIdf))
+#Czyszczenie danych:
+dim(DTM) #Jest 37184 słów
+
+labels = strsplit(docs[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]  # czy tutaj przypadkiem nie mozna przez to podkrecic
+labels = as.matrix(labels)
+val_idx = sort(sample(nrow(DTM), 10000))
+
+for(i in 1:ncol(labels)){
+  print(i)
+  if(i==1){
+    models = list(e1071::svm(DTM[-val_idx,], labels[-val_idx,i], 
+                             type = 'C-classification', 
+                             kernel = 'linear', cost = 1,
+                             probability = TRUE))
+  }
+  else{
+    x = DTM[val_idx,]
+    y = labels[val_idx,i]
+    models = c(models, list(e1071::svm(DTM[-val_idx,], labels[-val_idx,i],
+                                       type = 'C-classification', 
+                                       kernel = 'linear', cost = 1,
+                                       probability = TRUE)))
+  }
+}
+
+
+
+
+
+
+
+install.packages('knn.covertree')
+library(knn.covertree)
+
+
+
+
+
+library(data.table)
+library(tm)
+
+path = 'DM2020_training_docs_and_labels.txt' #ścieżka do pliku
+docs = data.table::fread(path, header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs, c("doc_id", "text", "labels"))
+docs[, text := gsub("[<][^<>]+[>]", "", text)]
+docs[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus = VCorpus(DataframeSource(docs),
+                   readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus = tm_map(myCorpus, content_transformer(correctEnc))
+myCorpus = tm_map(myCorpus, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus = tm_map(myCorpus, removeNumbers)
+myCorpus = tm_map(myCorpus, removePunctuation)
+myCorpus = tm_map(myCorpus, removeWords, stopwords())
+myCorpus = tm_map(myCorpus, stemDocument)
+myCorpus = tm_map(myCorpus, stripWhitespace)
+
+DTM = DocumentTermMatrix(myCorpus, 
+                         control = list(bounds = list(global = c(1000, 0.15*length(myCorpus))),
+                                        weighting = weightTfIdf)) 
+
+#Teraz można dokonywać predykcji. Najpierw trzeba przygotować labele:
+labels = strsplit(docs[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+labels = as.matrix(labels)
+
+
+val_idx = sort(sample(nrow(DTM), 10000))
+
+library(knn.covertree)
+DTMDense = as.matrix(DTM)
+knn_20 = find_knn(data = DTMDense, k = 20, query = DTMDense[val_idx,], distance = c("cosine"))
+
+
+
+summary(knn)
+head(knn)
+
+save(knn,file="output_of_knn.RData")
+
+
+
+
+save(val_idx, file = "val_idx.RDATA")
+
+
+?find_knn
+
+
+
+install.packages('rivolli/utiml')
+
+
+
+install.packages("rivolli")
+
+?mlknn
+DTMDense_data_fram = as.data.frame(DTMDense)
+
+library(devtools)
+install_local("C:/Users/JK137644/Documents/utiml-master", repos=NULL, type="win.binary", force = TRUE)
+library(utiml)
+
+DTMDense_mldr = mldr_from_dataframe(DTMDense_data_fram, labelIndices = c(2:1103))
+
+
+
+load("val_idx.RData")
+load("output_of_knn.RData")
+
+knnIndex = knn$index
+
+preds = apply(knnIndex, 1, function(x, labels) {pred = labels[x];
+pred = apply(pred, 2, sum)}, labels)
+
+preds = t(preds)
+predicted_labels = apply(preds, 1, function(x) names(which(x >= 1)))
+
+F1score = function(x, y) {
+  common = intersect(x, y)
+  result = 0
+  if(length(common) == 0) {
+    result = 0
+  } else {
+    result = 2*(length(common)^2)/(length(x)*length(y))/(length(common)/length(x) + length(common)/length(y))
+  }
+  
+  as.numeric(result)
+}
+
+#W tym momencie jest ważne, jakie doumenty były w zbiorze walidacyjnym, bo tylko dla nich
+#mamy predykcje od find_knn
+#Zamiast używać tych indeksów które mi wysłałeś, wyciągam je z tego co jest zapisane w knn
+
+rowNames = row.names(knnIndex)
+val_idx = sapply(docs[,doc_id], function(x, rowNames) {x%in%rowNames}, rowNames)
+val_idx = which(val_idx == TRUE)
+true_labels = strsplit(docs[, labels], ",")[val_idx]
+mean(mapply(F1score, predicted_labels, true_labels))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+docs_test = data.table::fread("C:/Users/JK137644/Desktop/DM2020_test_docs.txt", header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs_test, c("doc_id", "text", "labels"))
+docs_test[, text := gsub("[<][^<>]+[>]", "", text)]
+docs_test[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus_test = VCorpus(DataframeSource(docs_test),
+                   readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus_test = tm_map(myCorpus_test, content_transformer(correctEnc))
+myCorpus_test = tm_map(myCorpus_test, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus_test = tm_map(myCorpus_test, removeNumbers)
+myCorpus_test = tm_map(myCorpus_test, removePunctuation)
+myCorpus_test = tm_map(myCorpus_test, removeWords, stopwords())
+myCorpus_test = tm_map(myCorpus_test, stemDocument)
+myCorpus_test = tm_map(myCorpus_test, stripWhitespace)
+
+DTM_test = DocumentTermMatrix(myCorpus_test, 
+                         control = list(bounds = list(global = c(1000, 0.15*length(myCorpus_test))),
+                                        weighting = weightTfIdf)) 
+
+#Teraz można dokonywać predykcji. Najpierw trzeba przygotować labele:
+labels = strsplit(docs_test[, labels], ",")
+labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+                    label = unlist(labels))
+labels[, value := 1]
+labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+labels[, doc_id := NULL]
+labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+labels = as.matrix(labels)
+
+
+val_idx = sort(sample(nrow(DTM_test), 10000))
+
+library(knn.covertree)
+DTMDense_test = as.matrix(DTM_test)
+knn_test = find_knn(data = DTMDense, k = 2, query = DTMDense_test, distance = c("cosine"))
+

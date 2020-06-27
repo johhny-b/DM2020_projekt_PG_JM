@@ -1,0 +1,59 @@
+
+docs_test = data.table::fread("C:/Users/JK137644/Desktop/DM2020_test_docs.txt", header = FALSE, sep = "\t", encoding = "UTF-8")
+
+setnames(docs_test, c("doc_id", "text", "labels"))
+docs_test[, text := gsub("[<][^<>]+[>]", "", text)]
+docs_test[, text := gsub("[^[:alpha:]\']+", " ", text)]
+myCorpus_test = VCorpus(DataframeSource(docs_test),
+                        readerControl = list(reader = readDataframe, language = "en"))
+correctEnc = function(x) {
+  stringr::str_replace_all(x,"[^[:graph:]]", " ")
+}
+
+# using custom transformers
+myCorpus_test = tm_map(myCorpus_test, content_transformer(correctEnc))
+myCorpus_test = tm_map(myCorpus_test, content_transformer(tolower))
+
+# using 'standard' transformers (one-by-one)
+myCorpus_test = tm_map(myCorpus_test, removeNumbers)
+myCorpus_test = tm_map(myCorpus_test, removePunctuation)
+myCorpus_test = tm_map(myCorpus_test, removeWords, stopwords())
+myCorpus_test = tm_map(myCorpus_test, stemDocument)
+myCorpus_test = tm_map(myCorpus_test, stripWhitespace)
+
+#To stworzenia DTM_test potrzebujemy słów z DTM (wygenerowanego na zbiorze treningowym)
+DTM_test = DocumentTermMatrix(myCorpus_test, 
+                              control = list(dictionary = DTM_3$dimnames$Terms,
+                                             weighting = weightTfIdf)) 
+
+
+############# LABELE NIE SY NAM DO NICZEGO POTRZEBNE!!!!!!!!!!!
+#Teraz mo?na dokonywaa predykcji. Najpierw trzeba przygotowaa labele:
+#labels = strsplit(docs_test[, labels], ",")
+#labels = data.table(doc_id = rep(1:length(labels), times = sapply(labels, length)),
+#                    label = unlist(labels))
+#labels[, value := 1]
+#labels = dcast(labels, doc_id ~ label, value.var = "value", fill = 0)
+#labels[, doc_id := NULL]
+#labels[, colnames(labels)[colSums(labels) < 100] := NULL]
+#labels = as.matrix(labels)
+
+#niepotrzebne
+#val_idx = sort(sample(nrow(DTM_test), 10000))
+
+library(knn.covertree)
+
+DTMDense = as.matrix(DTM_3)
+
+DTMDense_test = as.matrix(DTM_test)
+
+knn_test = find_knn(data = DTMDense, k = 2, query = DTMDense_test, distance = c("cosine"))
+
+knn_test_2 = find_knn(data = DTMDense, k = 3, query = DTMDense_test, distance = c("cosine"))
+
+
+
+save(knn_test,file="knn_test_output.RData")
+
+
+sum(apply(DTM_test,1,sum)==0)
